@@ -1,0 +1,30 @@
+FROM ubuntu:22.04
+
+RUN apt-get update && apt-get install -y \
+    iproute2 \
+    net-tools \
+    iputils-ping \
+    tcpdump \
+    netcat \
+    python3 \
+    python3-pip \
+    python3-dev \
+    build-essential \
+    libfreetype6-dev \
+    libpng-dev \
+    pkg-config
+
+RUN pip3 install --no-cache-dir \
+    numpy \
+    matplotlib \
+    scipy
+
+WORKDIR /app
+
+COPY sender.py .
+
+ENV RECEIVER_HOST=receiver
+ENV RECEIVER_PORT=65432
+
+
+CMD ["python3", "sender.py"]

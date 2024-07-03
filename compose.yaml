@@ -1,0 +1,25 @@
+version: '3'
+services:
+  receiver:
+    container_name : receiver
+    image: reciver 
+    ports:
+      - "65432:65432"
+    # volumes:
+    #   - ./receiver_data:/data
+    networks:
+      - mynetwork
+
+  sender:
+    container_name : sender
+    image: sender
+    environment:
+      - RECEIVER_HOST=receiver
+      - RECEIVER_PORT=65432
+    # volumes:
+    #   - ./sender_data:/data
+    networks:
+      - mynetwork
+
+networks:
+  mynetwork:

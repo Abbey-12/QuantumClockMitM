@@ -1,0 +1,26 @@
+FROM ubuntu:22.04
+
+RUN apt-get update && apt-get install -y \
+    iproute2 \
+    net-tools \
+    python3-numpy \
+    iputils-ping \
+    tcpdump \
+    netcat \
+    scapy \
+    python3
+
+WORKDIR /app
+
+COPY MITM.py .
+
+# Set a default value for DATA_DIR
+ENV DATA_DIR=/data
+
+# Create the directory
+RUN mkdir -p $DATA_DIR
+
+# Make sure the directory is writable
+RUN chmod 777 $DATA_DIR
+
+CMD ["python3", "MITM.py"]
