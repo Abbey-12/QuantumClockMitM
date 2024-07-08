@@ -1,5 +1,9 @@
 FROM ubuntu:22.04
 
+# Set environment variables to prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+
 RUN apt-get update && apt-get install -y \
     iproute2 \
     net-tools \
@@ -7,7 +11,11 @@ RUN apt-get update && apt-get install -y \
     iputils-ping \
     tcpdump \
     netcat \
-    python3
+    python3 \
+    python3-pandas \
+    python3-scipy \
+    python3-matplotlib \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
