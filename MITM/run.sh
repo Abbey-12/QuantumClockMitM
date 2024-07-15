@@ -1,0 +1,1 @@
+docker run --privileged  --network security_mynetwork  --name mitm  mitm

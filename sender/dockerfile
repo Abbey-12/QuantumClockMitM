@@ -23,7 +23,7 @@ WORKDIR /app
 
 COPY sender.py .
 
-ENV RECEIVER_HOST=receiver
+ENV RECEIVER_HOST=slave
 ENV RECEIVER_PORT=65432
 
 

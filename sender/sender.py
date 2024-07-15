@@ -1,26 +1,59 @@
-import numpy as np
+from scipy.signal import correlate
+from scipy.stats import norm
 import matplotlib.pyplot as plt
+import numpy as np
 import socket
 import time
 import os
+import csv
 
-def master_photon_detection(detection_rate, total_time, time_bin):
-    # Calculate the number of time bins
-    num_bins = int(total_time / time_bin)
+np.random.seed(123)
+total_time = 0.14  # Total measurement time (0.14 seconds)
+avg_rate = 2000    # Average photon rate (2000 Hz)
+time_bin = 1e-4  # Time bin width (1 microsecond for better resolution)
+
+def generate_correlated_photon_arrivals(total_time, avg_rate):
+    expected_count = int(avg_rate * total_time)
+    num_photons = np.random.poisson(expected_count)
     
-    # Calculate the expected number of photons per bin
-    expected_photons_per_bin = detection_rate * time_bin
-    
-    #  photon detections  sequence
-    detections = np.random.poisson(expected_photons_per_bin, num_bins)
-    
-    return detections
+    arrivals_A = np.sort(np.random.uniform(0, total_time, num_photons)) 
+    return arrivals_A
+
+def create_histogram(arrivals, time_bin, total_time):
+    bins = np.arange(0, total_time + time_bin, time_bin)
+    hist, _ = np.histogram(arrivals, bins=bins)
+    return hist
 
 
-# Parameters
-time_bin = 20e-3  # 1 millisecond bin size
-detection_rate = 200  # s^-1 (assuming half of the 200 s^-1 pair rate goes to each detector)
-total_time = 3 # second
+# Generate correlated photon arrivals
+arrivals_A = generate_correlated_photon_arrivals(total_time, avg_rate)
+
+print(len(arrivals_A))
+
+# DATA_DIR = '/home/abebu/SimQN/security/QuantumClockMitM/sender/data'
+# os.makedirs(DATA_DIR, exist_ok=True)
+
+# # Save arrivals_A to a CSV file in the specified directory
+# filename = os.path.join(DATA_DIR, 'arrivals_A.csv')
+# with open(filename, 'w', newline='') as csvfile:
+#     writer = csv.writer(csvfile)
+#     writer.writerow(['Arrival Time'])  # Header
+#     for arrival in arrivals_A:
+#         writer.writerow([f'{arrival:.9f}'])
+# print(f"Saved arrivals_A to {filename}")
+
+# Create histograms
+hist_A = create_histogram(arrivals_A, time_bin, total_time)
+
+# # Plot histograms
+# plt.figure(figsize=(12, 6))
+# time_axis = np.arange(0, total_time, time_bin)
+# plt.stairs(hist_A, np.arange(0, total_time + time_bin, time_bin), alpha=0.7, fill=True, label='Detector A')
+# plt.xlabel('Time (s)')
+# plt.ylabel('Counts')
+# plt.title('Correlated Photon Detection Histograms')
+# plt.legend()
+# plt.show()
 
 # Network setup
 def check_hostname(hostname):
@@ -32,8 +65,10 @@ def check_hostname(hostname):
         print(f"Hostname {hostname} could not be resolved.")
         return None
 
+
 HOST = os.environ.get('RECIVER_HOST', 'slave')
-PORT = int(os.environ.get('RECIVER_PORT', 65432))
+# HOST = '127.0.0.1'
+PORT = 65432
 
 # Check if we can resolve the hostname
 ip_address = check_hostname(HOST)
@@ -42,17 +77,16 @@ if ip_address is None:
     print("Cannot resolve hostname. Please check your network configuration.")
     exit(1)
 
-data= master_photon_detection(detection_rate, total_time, time_bin)
-
-# print(f"Master clock generated new data: {data}")
-
 try:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         print(f"Attempting to connect to {ip_address}:{PORT}")
         s.connect((ip_address, PORT))
         print(f"Connected to {ip_address}:{PORT}")
-        for value in data:
+        print(str(arrivals_A))
+        for value in arrivals_A:
+            print(str(value))
             s.sendall(str(value).encode() + b'\n')
+            print(str(value))
             time.sleep(0.1)
         print("Data sent successfully")
 except socket.error as e:
@@ -61,11 +95,3 @@ except socket.error as e:
 
 # Wait before generating and sending new data
 time.sleep(5)
-
-
-
-
-
-
-
-
