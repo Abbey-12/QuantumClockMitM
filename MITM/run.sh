@@ -1,1 +1,1 @@
-docker run --privileged  --network security_mynetwork  --name mitm  mitm
+docker run --privileged --mac-address="02:42:ac:11:00:02" --network security_mynetwork --name mitm mitm
