@@ -1,5 +1,10 @@
 FROM ubuntu:22.04
 
+# Set environment variables to avoid interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     iproute2 \
     net-tools \
@@ -8,10 +13,19 @@ RUN apt-get update && apt-get install -y \
     tcpdump \
     netcat \
     scapy \
-    python3
+    python3-pip \
+    python3-dev \
+    build-essential \
+    libnetfilter-queue-dev \
+    iptables \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install Python package netfilterqueue
+RUN pip3 install NetfilterQueue
 
 WORKDIR /app
 
+# Copy your script to the working directory
 COPY MITM.py .
 
 # Set a default value for DATA_DIR

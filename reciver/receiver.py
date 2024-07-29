@@ -95,7 +95,7 @@ def receive_data():
         with conn:
             while True:
                 chunk = conn.recv(1024).decode()
-                # print(chunk)
+                print(chunk)
                 if not chunk:
                     break
                 
@@ -155,6 +155,7 @@ def analyze_and_plot(received_data_path):
     plt.legend()
     # plt.show()
     plt.savefig('/data/histogram_plot.png')
+    plt.close()
 
     # Plot cross-correlation
     plt.figure(figsize=(12, 6))
@@ -168,11 +169,14 @@ def analyze_and_plot(received_data_path):
     # plt.show()
     
     plt.savefig('/data/cross_correlation_plot.png')
+    plt.close()
 
 if __name__ == "__main__":
     try:
-        received_data, addr = receive_data()
-        analyze_and_plot(received_data)
+        while True:
+            # np.random.seed(123)
+            received_data, addr = receive_data()
+            analyze_and_plot(received_data)
 
     except Exception as e:
         logging.error(f"An error occurred: {e}", exc_info=True)
@@ -200,152 +204,3 @@ if __name__ == "__main__":
 
 
 
-
-
-# # continous communication
-
-
-# np.random.seed(123)
-# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s',
-#                     handlers=[logging.StreamHandler(sys.stdout)])
-
-# total_time = 0.14  # Total measurement time (0.14 seconds)
-# avg_rate = 2000    # Average photon rate (2000 Hz)
-# time_bin = 1e-4    # Time bin width (1 microsecond for better resolution)
-# true_offset = 5e-3  # True time offset (5 milliseconds)
-# fwhm = 135e-12     # Full Width at Half Maximum
-# std_dev = fwhm / (2 * np.sqrt(2 * np.log(2)))  # Convert FWHM to standard deviation
-
-# HOST = '0.0.0.0'
-# PORT = 65432
-
-# DATA_DIR = '/data'
-# os.makedirs(DATA_DIR, exist_ok=True)
-
-# def gaussian(x, mu, sigma):
-#     return np.exp(-((x - mu)**2) / (2 * sigma**2)) / (sigma * np.sqrt(2 * np.pi))
-
-# def generate_correlated_photon_arrivals(total_time, avg_rate, true_offset, std_dev):
-#     expected_count = int(avg_rate * total_time)
-#     num_photons = np.random.poisson(expected_count)
-    
-#     arrivals_A = np.sort(np.random.uniform(0, total_time, num_photons))
-    
-#     x = np.linspace(true_offset - 4*std_dev, true_offset + 4*std_dev, 1000)
-#     pdf = gaussian(x, true_offset, std_dev)
-#     offsets = np.random.choice(x, size=num_photons, p=pdf/np.sum(pdf))
-    
-#     arrivals_B = arrivals_A + offsets
-#     arrivals_B = arrivals_B[(arrivals_B >= 0) & (arrivals_B <= total_time)]
-    
-#     return arrivals_A, arrivals_B
-
-# def create_histogram(arrivals, time_bin, total_time):
-#     bins = np.arange(0, total_time + time_bin, time_bin)
-#     hist, _ = np.histogram(arrivals, bins=bins)
-#     return hist
-
-# def calculate_cross_correlation(hist_A, hist_B):
-#     cross_corr = correlate(hist_B, hist_A, mode='full')
-#     lags = np.arange(-len(hist_A) + 1, len(hist_B))
-#     return cross_corr, lags
-
-# def save_data(data, source_addr):
-#     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-#     filename = f"received_data_{timestamp}_{source_addr[0]}.csv"
-#     filepath = os.path.join(DATA_DIR, filename)
-#     with open(filepath, 'w', newline='') as csvfile:
-#         writer = csv.writer(csvfile)
-#         writer.writerow(['Value'])
-#         for value in data:
-#             writer.writerow([value])
-#     logging.info(f"Data saved to {filepath}")
-#     return filepath
-
-# def analyze_and_plot(received_data_path):
-#     with open(received_data_path, 'r') as csvfile:
-#         reader = csv.reader(csvfile)
-#         next(reader)
-#         received_data = [float(row[0]) for row in reader if row]
-    
-#     if not received_data:
-#         logging.error("No valid data points found in the received data.")
-#         return
-
-#     received_arrivals = np.array(received_data)
-#     hist_received = create_histogram(received_arrivals, time_bin, total_time)
-    
-#     # Generate correlated photon arrivals for comparison
-#     _, arrivals_B = generate_correlated_photon_arrivals(total_time, avg_rate, true_offset, std_dev)
-#     hist_B = create_histogram(arrivals_B, time_bin, total_time)
-
-#     cross_corr, lags = calculate_cross_correlation(hist_received, hist_B)
-#     estimated_offset = lags[np.argmax(cross_corr)] * time_bin
-#     logging.info(f"Estimated offset: {estimated_offset}")
-
-#     plt.figure(figsize=(12, 6))
-#     time_axis = np.arange(0, total_time, time_bin)
-#     plt.stairs(hist_received, np.arange(0, total_time + time_bin, time_bin), alpha=0.7, fill=True, label='Received Data')
-#     plt.stairs(hist_B, np.arange(0, total_time + time_bin, time_bin), alpha=0.7, fill=True, label='Generated Data B')
-#     plt.xlabel('Time (s)')
-#     plt.ylabel('Counts')
-#     plt.title('Photon Detection Histograms')
-#     plt.legend()
-#     plt.savefig(os.path.join(DATA_DIR, 'histogram_plot.png'))
-#     plt.close()
-
-#     plt.figure(figsize=(12, 6))
-#     plt.plot(lags * time_bin, cross_corr)
-#     plt.xlabel('Lag (s)')
-#     plt.ylabel('Cross-correlation')
-#     plt.title('Cross-correlation of Photon Arrival Times')
-#     plt.axvline(x=estimated_offset, color='r', linestyle='--', label='Estimated Offset')
-#     plt.axvline(x=true_offset, color='g', linestyle='--', label='True Offset')
-#     plt.legend()
-#     plt.savefig(os.path.join(DATA_DIR, 'cross_correlation_plot.png'))
-#     plt.close()
-
-# def handle_client(conn, addr):
-#     logging.info(f"New connection from {addr}")
-#     buffer = ""
-#     received_values = []
-    
-#     while True:
-#         chunk = conn.recv(1024).decode()
-#         if not chunk:
-#             break
-        
-#         buffer += chunk
-#         while '\n' in buffer:
-#             line, buffer = buffer.split('\n', 1)
-#             if line:
-#                 received_values.append(line)
-        
-#         if len(received_values) >= 1000:  # Process data in batches of 1000
-#             received_data = save_data(received_values, addr)
-#             threading.Thread(target=analyze_and_plot, args=(received_data,)).start()
-#             received_values = []
-    
-#     if received_values:
-#         received_data = save_data(received_values, addr)
-#         threading.Thread(target=analyze_and_plot, args=(received_data,)).start()
-    
-#     logging.info(f"Connection from {addr} closed.")
-
-# def receive_data():
-#     logging.info(f"Receiver starting up on {HOST}:{PORT}")
-#     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-#         s.bind((HOST, PORT))
-#         s.listen()
-#         logging.info(f"Receiver listening on {HOST}:{PORT}")
-        
-#         while True:
-#             conn, addr = s.accept()
-#             client_thread = threading.Thread(target=handle_client, args=(conn, addr))
-#             client_thread.start()
-
-# if __name__ == "__main__":
-#     try:
-#         receive_data()
-#     except Exception as e:
-#         logging.error(f"An error occurred: {e}", exc_info=True)
