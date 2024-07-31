@@ -64,15 +64,13 @@ def send_data():
         for value in arrivals_A:
             s.sendall(f"{value:.9f}\n".encode())
         print(f"Sent {len(arrivals_A)} data points")
-           
-    # except socket.error as e:
-    #     print(f"Connection failed: {e}")
-    #     print("Will try again in 5 seconds...")
-    #     time.sleep(5)
 
+        
 while True:
+# for i in range(4):
     np.random.seed(123)
     send_data()
     time.sleep(10)
-   
+    # print("new session")
+
 

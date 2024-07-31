@@ -94,15 +94,18 @@ def receive_data():
         
         with conn:
             while True:
-                chunk = conn.recv(1024).decode()
+                chunk = conn.recv(4096).decode()
                 print(chunk)
                 if not chunk:
+                    logging.info("No more data from client. Breaking the loop.")
                     break
                 
                 buffer += chunk
                 while '\n' in buffer:
                     line, buffer = buffer.split('\n', 1)
                     if line:  # Ignore empty lines
+                        print("print line:")
+                        print(line)
                         received_values.append(line)
         
         # print(received_values)
@@ -140,10 +143,15 @@ def analyze_and_plot(received_data_path):
 
     # Calculate cross-correlation
     cross_corr, lags = calculate_cross_correlation(hist_received, hist_B)
+    min_val = np.min(cross_corr)
+    max_val = np.max(cross_corr)
+    normalized_cross_corr = (cross_corr - min_val) / (max_val - min_val)
 
     # Find the estimated offset
-    estimated_offset = lags[np.argmax(cross_corr)] * time_bin
+    estimated_offset = lags[np.argmax(normalized_cross_corr)] * time_bin
     logging.info(f"Estimated offset: {estimated_offset}")
+    estimated_std = np.std( normalized_cross_corr)
+    logging.info(f"Estimated std: {estimated_std}")
     # Plot cross-correlation
     plt.figure(figsize=(12, 6))
     time_axis = np.arange(0, total_time, time_bin)
@@ -163,7 +171,7 @@ def analyze_and_plot(received_data_path):
     plt.xlabel('Lag (s)')
     plt.ylabel('Cross-correlation')
     plt.title('Cross-correlation of Photon Arrival Times')
-    plt.axvline(x=estimated_offset, color='r', linestyle='--', label='Estimated Offset')
+    plt.axvline(x=estimated_offset, color='r', linestyle='--', label=' Attacked Offset')
     plt.axvline(x=true_offset, color='g', linestyle='--', label='True Offset')
     plt.legend()
     # plt.show()
@@ -180,6 +188,8 @@ if __name__ == "__main__":
 
     except Exception as e:
         logging.error(f"An error occurred: {e}", exc_info=True)
+
+
 
     # hist_A= create_histogram(arrivals_A,time_bin, total_time)
     # hist_B= create_histogram(arrivals_B,time_bin,total_time)
