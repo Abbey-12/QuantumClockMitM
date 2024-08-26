@@ -1,7 +1,8 @@
 from datetime import datetime
-import numpy as np
+from scipy.stats import poisson
 import matplotlib.pyplot as plt
 from scipy.signal import correlate
+import numpy as np
 import socket
 import os
 import logging
@@ -17,43 +18,88 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 
-total_time = 0.14  # Total measurement time (0.14 seconds)
-avg_rate = 2000    # Average photon rate (2000 Hz)
-time_bin = 1e-4    # Time bin width (1 microsecond for better resolution)
+
+total_time = 0.14
+avg_rate = 2000
+time_bin = 1e-4
 
 # Parameters for the Gaussian time offset distribution
-true_offset = 5e-3  # True time offset (5 milliseconds)
+true_offset = 5e-4  # True time offset (0.5 milliseconds)
 fwhm = 135e-12         # Full Width at Half Maximum (2 milliseconds)
 std_dev = fwhm / (2 * np.sqrt(2 * np.log(2)))  # Convert FWHM to standard deviation
+print(f"STD:{std_dev}")
 
-def gaussian(x, mu, sigma):
-    return np.exp(-((x - mu)**2) / (2 * sigma**2)) / (sigma * np.sqrt(2 * np.pi))
+DATA_DIR = '/data'
+os.makedirs(DATA_DIR, exist_ok=True)
 
 def generate_correlated_photon_arrivals(total_time, avg_rate, true_offset, std_dev):
-    expected_count = int(avg_rate * total_time)
+    # Expected number of events
+    expected_count = avg_rate * total_time
+    
+    # Generate actual number of events using Poisson distribution
     num_photons = np.random.poisson(expected_count)
     
-    arrivals_A = np.sort(np.random.uniform(0, total_time, num_photons))
+    # Generate num_events - 1 inter-arrival times
+    inter_arrival_times = np.random.exponential(1/avg_rate, size=num_photons- 1)
     
-    # Generate Gaussian-distributed offsets
-    x = np.linspace(true_offset - 4*std_dev, true_offset + 4*std_dev, 1000)
-    pdf = gaussian(x, true_offset, std_dev)
-    offsets = np.random.choice(x, size=num_photons, p=pdf/np.sum(pdf))
+    # Calculate arrival times
+    arrivals_A = np.zeros(num_photons)
+    arrivals_A[1:] = np.cumsum(inter_arrival_times)
     
+    # Scale arrival times to fit within total_time
+    arrivals_A = arrivals_A * (total_time / arrivals_A[-1]) if arrivals_A[-1] > 0 else arrivals_A
+
+    offsets = np.random.normal(true_offset, std_dev, size=len(arrivals_A))
     arrivals_B = arrivals_A + offsets
     
     arrivals_B = arrivals_B[(arrivals_B >= 0) & (arrivals_B <= total_time)]
-    
+
     return arrivals_A, arrivals_B
+
+   
+def save_correlation_data(cross_corr_normalized, lags):
+    """
+    Save the generated arrival times to CSV files.
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # filepath_lag = os.path.join(DATA_DIR, f"Lag_arrivals{timestamp}.csv")
+    # filepath_corr = os.path.join(DATA_DIR, f"corr_arrivals{timestamp}.csv")
+    filepath = os.path.join(DATA_DIR, f"correlation_data_{timestamp}.csv")
+
+    with open(filepath, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(['Lag (s)', 'Cross-correlation'])
+        for lag, corr in zip(lags, cross_corr_normalized):
+            writer.writerow([lag, corr])
+    
+    logging.info(f"Correlation and lag data saved to {filepath}")
+    return filepath
+
+    # # Save corr to a CSV file
+    # with open(filepath_corr, 'w', newline='') as csvfile:
+    #     writer = csv.writer(csvfile)
+    #     writer.writerow(['Arrival Time B'])
+    #     for corr in cross_corr_normalized:
+    #         writer.writerow([corr])
+    # logging.info(f"Generated data for arrivals B saved to {filepath_corr}")
+    
+    # return filepath_corr, filepath_lag
+
+
 def create_histogram(arrivals, time_bin, total_time):
     bins = np.arange(0, total_time + time_bin, time_bin)
     hist, _ = np.histogram(arrivals, bins=bins)
-    return hist
+    return hist, bins
 
 def calculate_cross_correlation(hist_A, hist_B):
     cross_corr = correlate(hist_B, hist_A, mode='full')
     lags = np.arange(-len(hist_A) + 1, len(hist_B))
-    return cross_corr, lags
+        
+    # Normalize the cross-correlation
+    n = np.sqrt(np.sum(hist_A**2) * np.sum(hist_B**2))
+    cross_corr_normalized = cross_corr / n
+    save_correlation_data(cross_corr_normalized, lags)
+    return cross_corr_normalized, lags
 
 arrivals_A, arrivals_B = generate_correlated_photon_arrivals(total_time, avg_rate, true_offset, std_dev)
 
@@ -63,8 +109,6 @@ HOST ='0.0.0.0'
 # PORT = int(os.environ.get('RECEIVER_PORT', 65432))
 PORT= 65432
 
-DATA_DIR = '/data'
-os.makedirs(DATA_DIR, exist_ok=True)
 
 def save_data(data, source_addr):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -77,7 +121,6 @@ def save_data(data, source_addr):
             writer.writerow([value])
     logging.info(f"Data saved to {filepath}")
     return filepath
-
 
 def receive_data():
     logging.info(f"Receiver starting up on {HOST}:{PORT}")
@@ -115,7 +158,6 @@ def receive_data():
         received_data = save_data(received_values, addr)
         return received_data, addr
 
-
 def analyze_and_plot(received_data_path):
     # Read data from CSV file
     with open(received_data_path, 'r') as csvfile:
@@ -136,49 +178,82 @@ def analyze_and_plot(received_data_path):
     # Convert received data to numpy array
     received_arrivals = np.array(received_data)
     
-    # Create histogram for received data
-    hist_received = create_histogram(received_arrivals, time_bin, total_time)
-    hist_B= create_histogram(arrivals_B,time_bin,total_time)
-    # Generate correlated photon arrivals
+    # Create histograms for received data and simulated data
+    hist_received, bins = create_histogram(received_arrivals, time_bin, total_time)
+    hist_B, bins = create_histogram(arrivals_B, time_bin, total_time)
+    bins_scaled = [x * 1000 for x in bins] 
+
+    # Calculate the mean of the received histogram for Poisson fitting
+    mean_received = np.mean(hist_received)
+    mean_B = np.mean(hist_B)
+
+    # Generate x values for the fitted Poisson curves
+    x = np.arange(0, max(max(hist_received), max(hist_B)) + 1)
+    print("x")
+    print(x)
+
+    # Calculate the Poisson PMF for both histograms
+    pmf_received = poisson.pmf(x, mean_received)   # Scale by bin width and number of arrivals
+    pmf_B = poisson.pmf(x, mean_B)  # Scale by bin width and number of arrivals
 
     # Calculate cross-correlation
     cross_corr, lags = calculate_cross_correlation(hist_received, hist_B)
-    min_val = np.min(cross_corr)
-    max_val = np.max(cross_corr)
-    normalized_cross_corr = (cross_corr - min_val) / (max_val - min_val)
-
+    lags_scaled = [x * 1000 for x in lags] 
+  
     # Find the estimated offset
-    estimated_offset = lags[np.argmax(normalized_cross_corr)] * time_bin
+    estimated_offset = lags[np.argmax(cross_corr)] * time_bin
     logging.info(f"Estimated offset: {estimated_offset}")
-    estimated_std = np.std( normalized_cross_corr)
+    estimated_std = np.std(cross_corr)
     logging.info(f"Estimated std: {estimated_std}")
-    # Plot cross-correlation
+   
+       #  to zoom near to the peak
+    peak_index = np.argmax(cross_corr)
+    window_size = 100  # Number of points around the peak to display
+    window_start = max(0, peak_index - window_size)
+    window_end = min(len(cross_corr), peak_index + window_size)
+    # Font properties
+    font_properties = {'size': 14, 'weight': 'bold'}
+
+    # Plot histograms with Poisson fits
     plt.figure(figsize=(12, 6))
     time_axis = np.arange(0, total_time, time_bin)
-    plt.stairs(hist_received, np.arange(0, total_time + time_bin, time_bin), alpha=0.7, fill=True, label='Detector A')
-    plt.stairs(hist_B, np.arange(0, total_time + time_bin, time_bin), alpha=0.7, fill=True, label='Detector B')
-    plt.xlabel('Time (s)')
-    plt.ylabel('Counts')
-    plt.title('Correlated Photon Detection Histograms')
-    plt.legend()
-    # plt.show()
-    plt.savefig('/data/histogram_plot.png')
+
+    # Plot histograms
+    plt.stairs(hist_received, bins_scaled, alpha=1, fill=True, label='Detector 1',linewidth=10)
+    plt.stairs(hist_B, bins_scaled, alpha=1, fill=True, label='Detector 2', linewidth=10)
+    
+    # # Overlay the Poisson fits
+    # plt.plot(pmf_received, x, color='red', marker='o', markersize=5, linestyle='none', label='Detector 1')
+    # plt.plot(pmf_B, x, color='green', marker='o', markersize=5, linestyle='none', label='Detector 2')
+
+    # plt.xlabel('Photon Counts per time bin', fontdict=font_properties)
+    # plt.ylabel('probability', fontdict=font_properties)
+    
+    plt.xlabel('Time (ms)', fontdict=font_properties)
+    plt.ylabel('Counts', fontdict=font_properties)
+    # plt.title('Photon Detection Histograms with Poisson Fits', fontdict=font_properties)
+    plt.legend(prop=font_properties)
+    plt.xticks(fontsize=12, weight='bold')
+    plt.yticks(fontsize=12, weight='bold')
+    plt.savefig('/data/histogram_plot_with_poisson_fits.png')
     plt.close()
 
     # Plot cross-correlation
     plt.figure(figsize=(12, 6))
-    plt.plot(lags * time_bin, cross_corr)
-    plt.xlabel('Lag (s)')
-    plt.ylabel('Cross-correlation')
-    plt.title('Cross-correlation of Photon Arrival Times')
-    plt.axvline(x=estimated_offset, color='r', linestyle='--', label=' Attacked Offset')
-    plt.axvline(x=true_offset, color='g', linestyle='--', label='True Offset')
-    plt.legend()
-    # plt.show()
-    
+    plt.plot(np.array(lags_scaled[window_start:window_end]) * time_bin, cross_corr[window_start:window_end])
+    # plt.plot(lags * time_bin, cross_corr)
+    plt.xlabel('Lag (ms)', fontdict=font_properties)
+    plt.ylabel('Cross-correlation', fontdict=font_properties)
+    # plt.title('Cross-correlation of Photon Arrival Times', fontdict=font_properties)
+    # plt.axvline(x=estimated_offset, color='r', linestyle='--', label=f' Normal Estimated Offset: {estimated_offset:.6f}s\n Normal Estimated Std: {estimated_std:.6f}')
+    plt.text(0.05, 0.9, f'Attacked Offset: {estimated_offset:.6f}s\nAttacked Std: {estimated_std:.6f}', 
+             transform=plt.gca().transAxes, fontsize=14, color='black', weight='bold', ha='left')
+    plt.legend(prop=font_properties)
+    plt.xticks(fontsize=12, weight='bold')
+    plt.yticks(fontsize=12, weight='bold')
     plt.savefig('/data/cross_correlation_plot.png')
     plt.close()
-
+    
 if __name__ == "__main__":
     try:
         while True:
@@ -188,29 +263,5 @@ if __name__ == "__main__":
 
     except Exception as e:
         logging.error(f"An error occurred: {e}", exc_info=True)
-
-
-
-    # hist_A= create_histogram(arrivals_A,time_bin, total_time)
-    # hist_B= create_histogram(arrivals_B,time_bin,total_time)
-    # # Calculate cross-correlation
-    # cross_corr1, lags = calculate_cross_correlation(hist_A, hist_B)
-
-    # # Find the estimated offset
-    # estimated_offset1 = lags[np.argmax(cross_corr1)] * time_bin
-    # logging.info(f"Estimated offset: {estimated_offset1}")
-    # # Plot cross-correlation
-
-    # # Plot cross-correlation
-    # plt.figure(figsize=(12, 6))
-    # plt.plot(lags * time_bin, cross_corr1)
-    # plt.xlabel('Lag (s)')
-    # plt.ylabel('Cross-correlation')
-    # plt.title('Cross-correlation of Photon Arrival Times')
-    # plt.axvline(x=estimated_offset1, color='r', linestyle='--', label='Estimated Offset')
-    # plt.axvline(x=true_offset, color='g', linestyle='--', label='True Offset')
-    # plt.legend()
-    # plt.show()
-
 
 

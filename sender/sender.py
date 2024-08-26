@@ -2,24 +2,36 @@
 from scipy.signal import correlate
 from scipy.stats import norm
 import matplotlib.pyplot as plt
-import numpy as np
 from datetime import datetime
+from scipy.stats import poisson
+import numpy as np
 import socket
 import time
 import os
 import csv
 
-# np.random.seed(123)
 
 total_time = 0.14
 avg_rate = 2000
 time_bin = 1e-4
 
 def generate_correlated_photon_arrivals(total_time, avg_rate):
-    expected_count = int(avg_rate * total_time)
-    num_photons = np.random.poisson(expected_count)
-    arrivals_A = np.sort(np.random.uniform(0, total_time, num_photons)) 
+    # Expected number of events
+    expected_count = avg_rate * total_time
+    
+    # Generate actual number of events using Poisson distribution
+    num_events = np.random.poisson(expected_count)
+    # Generate num_events - 1 inter-arrival times
+    inter_arrival_times = np.random.exponential(1/avg_rate, size=num_events - 1)
+    
+    # Calculate arrival times
+    arrivals_A = np.zeros(num_events)
+    arrivals_A[1:] = np.cumsum(inter_arrival_times)
+    
+    # Scale arrival times to fit within total_time
+    arrivals_A = arrivals_A * (total_time / arrivals_A[-1]) if arrivals_A[-1] > 0 else arrivals_A
     return arrivals_A
+
 
 def check_hostname(hostname):
     try:
@@ -45,6 +57,12 @@ if ip_address is None:
     print("Cannot resolve hostname. Please check your network configuration.")
     exit(1)
 
+
+def create_histogram(arrivals, time_bin, total_time):
+    bins = np.arange(0, total_time + time_bin, time_bin)
+    hist, _ = np.histogram(arrivals, bins=bins)
+    return hist,bins
+
 def send_data():
     # try:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -54,12 +72,12 @@ def send_data():
         
         # while True:
         arrivals_A = generate_correlated_photon_arrivals(total_time, avg_rate)
-        
-        # Save arrivals to a file
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"arrivals_{timestamp}.csv"
-        save_arrivals(arrivals_A, filename)
-        print(f"Saved {len(arrivals_A)} data points to {filename}")
+    
+        # # Save arrivals to a file
+        # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # filename = f"arrivals_{timestamp}.csv"
+        # save_arrivals(arrivals_A, filename)
+        # print(f"Saved {len(arrivals_A)} data points to {filename}")
         
         for value in arrivals_A:
             s.sendall(f"{value:.9f}\n".encode())
@@ -67,10 +85,9 @@ def send_data():
 
         
 while True:
-# for i in range(4):
+
     np.random.seed(123)
     send_data()
-    time.sleep(10)
-    # print("new session")
-
+    time.sleep(1)
+ 
 
