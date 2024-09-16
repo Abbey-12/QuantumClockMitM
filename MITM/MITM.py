@@ -103,21 +103,18 @@ def packet_callback(pkt):
                         print(timestamp)
                         original_time = float(timestamp)  
                         np.random.seed(123) 
-                        if np.random.random()<0.7:
-                             
-                            random_value = round(np.random.uniform(0.00, 0.00001), 9)
+                        if np.random.random()<0.1:
+                            pass
+                            # # random_value = round(np.random.uniform(0.00, 0.00001), 9)
                             # random_value = round(np.random.normal(mean,std), 9)
-                            print("randommmmmmmmmmmmmmm")
-                            print(random_value)
-                            modified_time = original_time + random_value
-                            print("modified")
-                            print(modified_time)
-
-                            modified_datas.append(f"{modified_time:.9f}")
-                            # modified_datas.append(f"{timestamp:.9f}")
+                            # modified_time = original_time + random_value
+                            # modified_datas.append(f"{modified_time:.9f}")
+                            # # modified_datas.append(f"{timestamp:.9f}")
                         else:
-                            modified_datas.append(f"{timestamp:.9f}")
-                            
+                            # modified_datas.append(f"{timestamp:.9f}")
+                            random_value = round(np.random.normal(mean,std), 9)
+                            modified_time = original_time + random_value
+                            modified_datas.append(f"{modified_time:.9f}")
 
 
                 # Join modified data into a new payload

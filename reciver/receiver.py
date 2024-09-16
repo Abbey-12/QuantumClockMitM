@@ -18,10 +18,9 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 
-
 total_time = 0.14
 avg_rate = 2000
-time_bin = 1e-4
+time_bin = 5e-6
 
 # Parameters for the Gaussian time offset distribution
 true_offset = 5e-4  # True time offset (0.5 milliseconds)
@@ -75,16 +74,23 @@ def save_correlation_data(cross_corr_normalized, lags):
     logging.info(f"Correlation and lag data saved to {filepath}")
     return filepath
 
-    # # Save corr to a CSV file
-    # with open(filepath_corr, 'w', newline='') as csvfile:
-    #     writer = csv.writer(csvfile)
-    #     writer.writerow(['Arrival Time B'])
-    #     for corr in cross_corr_normalized:
-    #         writer.writerow([corr])
-    # logging.info(f"Generated data for arrivals B saved to {filepath_corr}")
-    
-    # return filepath_corr, filepath_lag
+def save_hist_data(bins, hist_A,hist_B):
+    """
+    Save the generated arrival times to CSV files.
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # filepath_lag = os.path.join(DATA_DIR, f"Lag_arrivals{timestamp}.csv")
+    # filepath_corr = os.path.join(DATA_DIR, f"corr_arrivals{timestamp}.csv")
+    filepath = os.path.join(DATA_DIR, f"hist_data_{timestamp}.csv")
 
+    with open(filepath, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(['bins (ms)', 'hist_A','hist_B'])
+        for bins, hist_A,hist_B in zip(bins, hist_A,hist_B):
+            writer.writerow([bins, hist_A,hist_B])
+    
+    logging.info(f"Correlation and lag data saved to {filepath}")
+    return filepath
 
 def create_histogram(arrivals, time_bin, total_time):
     bins = np.arange(0, total_time + time_bin, time_bin)
@@ -101,15 +107,11 @@ def calculate_cross_correlation(hist_A, hist_B):
     save_correlation_data(cross_corr_normalized, lags)
     return cross_corr_normalized, lags
 
-arrivals_A, arrivals_B = generate_correlated_photon_arrivals(total_time, avg_rate, true_offset, std_dev)
-
-
 # Network setup
 HOST ='0.0.0.0'
 # PORT = int(os.environ.get('RECEIVER_PORT', 65432))
 PORT= 65432
-
-
+arrivals_A, arrivals_B = generate_correlated_photon_arrivals(total_time, avg_rate, true_offset, std_dev)
 def save_data(data, source_addr):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"received_data_{timestamp}_{source_addr[0]}.csv"
@@ -177,11 +179,12 @@ def analyze_and_plot(received_data_path):
 
     # Convert received data to numpy array
     received_arrivals = np.array(received_data)
-    
     # Create histograms for received data and simulated data
     hist_received, bins = create_histogram(received_arrivals, time_bin, total_time)
     hist_B, bins = create_histogram(arrivals_B, time_bin, total_time)
+    hist_A, bins = create_histogram(arrivals_A, time_bin, total_time)
     bins_scaled = [x * 1000 for x in bins] 
+    save_hist_data(bins_scaled, hist_A,hist_B)
 
     # Calculate the mean of the received histogram for Poisson fitting
     mean_received = np.mean(hist_received)
@@ -201,12 +204,18 @@ def analyze_and_plot(received_data_path):
     lags_scaled = [x * 1000 for x in lags] 
   
     # Find the estimated offset
-    estimated_offset = lags[np.argmax(cross_corr)] * time_bin
+    estimated_offset = lags_scaled[np.argmax(cross_corr)] * time_bin
     logging.info(f"Estimated offset: {estimated_offset}")
     estimated_std = np.std(cross_corr)
     logging.info(f"Estimated std: {estimated_std}")
    
-       #  to zoom near to the peak
+   # Define zoom window for histogram plot
+    zoom_window_size = 1500  # Number of points around the peak to display for zoom
+    zoom_start = max(0, np.argmax(hist_received) - zoom_window_size)
+    zoom_end = min(len(hist_received), np.argmax(hist_received) + zoom_window_size)
+
+
+    #  to zoom near to the peak
     peak_index = np.argmax(cross_corr)
     window_size = 100  # Number of points around the peak to display
     window_start = max(0, peak_index - window_size)
@@ -218,10 +227,13 @@ def analyze_and_plot(received_data_path):
     plt.figure(figsize=(12, 6))
     time_axis = np.arange(0, total_time, time_bin)
 
-    # Plot histograms
-    plt.stairs(hist_received, bins_scaled, alpha=1, fill=True, label='Detector 1',linewidth=10)
-    plt.stairs(hist_B, bins_scaled, alpha=1, fill=True, label='Detector 2', linewidth=10)
+    # # Plot histograms
+    # plt.stairs(hist_received, bins_scaled, alpha=1, fill=True, label='Detector 1',linewidth=10)
+    # plt.stairs(hist_B, bins_scaled, alpha=1, fill=True, label='Detector 2', linewidth=10)
     
+    # Plot zoomed-in histogram
+    plt.stairs(hist_received[zoom_start:zoom_end], bins_scaled[zoom_start:zoom_end + 1], alpha=1, fill=True, label='Detector 1', linewidth=40)
+    plt.stairs(hist_B[zoom_start:zoom_end], bins_scaled[zoom_start:zoom_end + 1], alpha=1, fill=True, label='Detector 2', linewidth=40)
     # # Overlay the Poisson fits
     # plt.plot(pmf_received, x, color='red', marker='o', markersize=5, linestyle='none', label='Detector 1')
     # plt.plot(pmf_B, x, color='green', marker='o', markersize=5, linestyle='none', label='Detector 2')
@@ -241,12 +253,12 @@ def analyze_and_plot(received_data_path):
     # Plot cross-correlation
     plt.figure(figsize=(12, 6))
     plt.plot(np.array(lags_scaled[window_start:window_end]) * time_bin, cross_corr[window_start:window_end])
-    # plt.plot(lags * time_bin, cross_corr)
+    # plt.plot(lags* time_bin, cross_corr)
     plt.xlabel('Lag (ms)', fontdict=font_properties)
     plt.ylabel('Cross-correlation', fontdict=font_properties)
     # plt.title('Cross-correlation of Photon Arrival Times', fontdict=font_properties)
     # plt.axvline(x=estimated_offset, color='r', linestyle='--', label=f' Normal Estimated Offset: {estimated_offset:.6f}s\n Normal Estimated Std: {estimated_std:.6f}')
-    plt.text(0.05, 0.9, f'Attacked Offset: {estimated_offset:.6f}s\nAttacked Std: {estimated_std:.6f}', 
+    plt.text(0.05, 0.9, f'Attacked Offset: {estimated_offset:.6f}ms\nAttacked Std: {estimated_std:.6f}', 
              transform=plt.gca().transAxes, fontsize=14, color='black', weight='bold', ha='left')
     plt.legend(prop=font_properties)
     plt.xticks(fontsize=12, weight='bold')
